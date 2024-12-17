@@ -39,11 +39,11 @@ _BATCH_SIZES_TO_CAPTURE = [1, 2, 4] + [
 ]
 
 
-class PreparePromptMetadata(NamedTuple):
-    input_tokens: List[int]
-    input_positions: List[int]
+class PreparePromptMetadata(NamedTuple): #继承NamedTuple
+    input_tokens: List[int] # input_tokens 用于存放实际输入token（在NLP场景中，多为整数ID列表）。
+    input_positions: List[int] # 位置编码？
     attn_metadata: Optional[AttentionMetadataPerStage]
-    prompt_lens: List[int]
+    prompt_lens: List[int] 
     subquery_lens: List[int]
     lora_index_mapping: List[int]
     lora_prompt_mapping: List[int]

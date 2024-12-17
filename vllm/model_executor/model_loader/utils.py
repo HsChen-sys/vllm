@@ -12,10 +12,10 @@ from vllm.model_executor.models import ModelRegistry
 @contextlib.contextmanager
 def set_default_torch_dtype(dtype: torch.dtype):
     """Sets the default torch dtype to the given dtype."""
-    old_dtype = torch.get_default_dtype()
-    torch.set_default_dtype(dtype)
-    yield
-    torch.set_default_dtype(old_dtype)
+    old_dtype = torch.get_default_dtype()  # 记住当前默认dtype
+    torch.set_default_dtype(dtype) # 设置新的默认dtype
+    yield # 暂停，进入 with 代码块
+    torch.set_default_dtype(old_dtype) # 退出时恢复旧dtype
 
 
 def get_model_architecture(
