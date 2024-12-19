@@ -40,7 +40,7 @@ _BATCH_SIZES_TO_CAPTURE = [1, 2, 4] + [
 
 
 class PreparePromptMetadata(NamedTuple): #继承NamedTuple
-    input_tokens: List[int] # input_tokens 用于存放实际输入token（在NLP场景中，多为整数ID列表）。
+    input_tokens: List[int] # input_tokens 用于存放实际输入token（在NLP场景中，多为整数ID列表）
     input_positions: List[int] # 位置编码？
     attn_metadata: Optional[AttentionMetadataPerStage]
     prompt_lens: List[int] 
@@ -237,6 +237,15 @@ class ModelRunner:
         prefix_block_tables: List[List[int]] = []
         multi_modal_input_list: List[torch.Tensor] = []
 
+        # 初始化一系列用于存储输入prompt相关数据的列表：
+        # * input_tokens: 要输入模型的最终token ID列表
+        # * input_positions: 每个token在序列中的位置索引列表
+        # * slot_mapping: 将token位置映射到缓存slot（用于prefix caching）的列表
+        # * lora_index_mapping, lora_prompt_mapping: 用于记录LoRA（低秩适配）相关的ID映射
+        # * lora_requests: 存储LoRA请求的集合
+        #
+        # LoRA (Low-Rank Adaptation): 一种为大型语言模型适配新任务的技术，只在模型权重中注入低秩更新，而无需完全重训。
+
         if len(seq_group_metadata_list) == 0:
             return PreparePromptMetadata.empty()
 
@@ -247,6 +256,8 @@ class ModelRunner:
             seq_id = seq_ids[0]
 
             computed_block_nums = seq_group_metadata.computed_block_nums
+            # 检查是否可以同时使用分块预填充（chunked prefill）和前缀缓存（prefix caching）。
+            # 当前逻辑不支持两者共用，所以如果条件冲突就报错。
             if (self.scheduler_config is not None
                     and self.scheduler_config.chunked_prefill_enabled
                     and not (computed_block_nums is None
@@ -257,15 +268,21 @@ class ModelRunner:
 
             token_chunk_size = seq_group_metadata.token_chunk_size
             seq_data = seq_group_metadata.seq_data[seq_id]
+            # computed_len: 已经预先计算过的token数（例如已缓存的prefix部分的长度）
             computed_len = seq_data.get_num_computed_tokens()
             # We should use get_len here because in case of preemption
             # it contains output tokens.
+            #计算prefill末尾token的index
             prefill_end = min(seq_data.get_len(),
                               computed_len + token_chunk_size)
+            # 本次需要实际获取的token列表（从computed_len到prefill_end）
             prompt_tokens = seq_data.get_token_ids()[computed_len:prefill_end]
             prompt_len = prefill_end
             prompt_lens.append(prompt_len)
 
+            # 针对prefix caching或chunked prefill的逻辑处理：
+            # 如果computed_block_nums存在，表示之前已有缓存的block号，需要从prompt中去除已缓存的部分。
+            # 如果chunked prefill启用，则需要维护prefix_block_tables，以记录之前处理过的块信息。
             # NOTE: This only works for oooooooxxx style attention.
             if computed_block_nums is not None and len(
                     computed_block_nums) > 0 and self.sliding_window is None:
@@ -276,12 +293,15 @@ class ModelRunner:
             elif self.scheduler_config.chunked_prefill_enabled:
                 if seq_group_metadata.block_tables is not None:
                     # Prefill has chunked before.
+                    # 因为已经chunk过，所以会有block_table
+                    # 将physical block id 记录在 prefix_block_tables中
                     block_table = seq_group_metadata.block_tables[seq_id]
                     prefix_block_tables.append(block_table)
                 else:
                     # The first prefill.
                     prefix_block_tables.append([])
             else:
+                # 常规情况，无分块预填充
                 prefix_block_tables.append([])
                 # Right now, prefill start is always 0. However, this
                 # assumption can be changed once chunked prefill is introduced.
@@ -317,6 +337,8 @@ class ModelRunner:
                 continue
 
             # Compute the slot mapping.
+            # block_tables: The block tables. (Seq id -> list of physical block
+            # numbers)
             block_table = seq_group_metadata.block_tables[seq_id]
             # Mask the [0, start_idx) tokens of the prompt with _PAD_SLOT_ID,
             # where start_idx is max(0, prompt_len - sliding_window).
@@ -358,6 +380,7 @@ class ModelRunner:
             multi_modal_input = None
 
         # Prepare prefix block tables
+
         max_prompt_block_table_len = max(len(t) for t in prefix_block_tables)
         block_tables = make_tensor_with_pad(
             prefix_block_tables,
@@ -822,6 +845,8 @@ class ModelRunner:
         seq_group_metadata_list: List[SequenceGroupMetadata],
         kv_caches: List[torch.Tensor],
     ) -> Optional[SamplerOutput]:
+        #Tuple[torch.Tensor, torch.Tensor, AttentionMetadata, SamplingMetadata,
+               #Set[LoRARequest], LoRAMapping, torch.Tensor]:
         (input_tokens, input_positions, attn_metadata, sampling_metadata,
          lora_requests, lora_mapping, multi_modal_input
          ) = self.prepare_input_tensors(seq_group_metadata_list)

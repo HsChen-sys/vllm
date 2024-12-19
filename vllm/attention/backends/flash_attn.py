@@ -212,8 +212,8 @@ class FlashAttentionImpl(AttentionImpl):
         assert decode_query.shape[0] == num_decode_tokens
 
         if prefill_meta := attn_metadata.prefill_metadata:
-            # Prompt run.
-            if kv_cache is None or prefill_meta.block_tables.numel() == 0:
+            # Prompt run. #prefill
+            if kv_cache is None or prefill_meta.block_tables.numel() == 0: #不存在分块预填充
                 # normal attention
                 # When block_tables are not filled, it means q and k are the
                 # prompt, and they have the same length.
@@ -244,7 +244,7 @@ class FlashAttentionImpl(AttentionImpl):
                     key_cache,
                     value_cache,
                     prefill_meta.block_tables,
-                    prefill_meta.subquery_start_loc,
+                    prefill_meta.subquery_start_loc,  #prefix caching 用 subquery_start_loc来定位
                     prefill_meta.prompt_lens_tensor,
                     prefill_meta.context_lens,
                     prefill_meta.max_subquery_len,

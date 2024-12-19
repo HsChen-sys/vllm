@@ -8,8 +8,8 @@ from torch import nn
 from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
 
-
-@contextlib.contextmanager
+#只需要在一个函数上加上 @contextlib.contextmanager 装饰器，然后在函数中用 yield 将控制权分段即可。你不必显式编写 __enter__ 和 __exit__。
+@contextlib.contextmanager #上下文管理装饰器
 def set_default_torch_dtype(dtype: torch.dtype):
     """Sets the default torch dtype to the given dtype."""
     old_dtype = torch.get_default_dtype()  # 记住当前默认dtype

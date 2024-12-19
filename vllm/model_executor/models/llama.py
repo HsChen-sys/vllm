@@ -94,12 +94,12 @@ class LlamaAttention(nn.Module):
         sliding_window: Optional[int] = None,
     ) -> None:
         super().__init__()
-        self.hidden_size = hidden_size
+        self.hidden_size = hidden_size #4096
         tp_size = get_tensor_model_parallel_world_size()
-        self.total_num_heads = num_heads
+        self.total_num_heads = num_heads #q_heads
         assert self.total_num_heads % tp_size == 0
-        self.num_heads = self.total_num_heads // tp_size
-        self.total_num_kv_heads = num_kv_heads
+        self.num_heads = self.total_num_heads // tp_size #No. of head per GPU
+        self.total_num_kv_heads = num_kv_heads #
         if self.total_num_kv_heads >= tp_size:
             # Number of KV heads is greater than TP size, so we partition
             # the KV heads across multiple tensor parallel GPUs.
@@ -108,9 +108,9 @@ class LlamaAttention(nn.Module):
             # Number of KV heads is less than TP size, so we replicate
             # the KV heads across multiple tensor parallel GPUs.
             assert tp_size % self.total_num_kv_heads == 0
-        self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size)
-        self.head_dim = hidden_size // self.total_num_heads
-        self.q_size = self.num_heads * self.head_dim
+        self.num_kv_heads = max(1, self.total_num_kv_heads // tp_size) #No. of KV heads per GPU
+        self.head_dim = hidden_size // self.total_num_heads #dim per GPU
+        self.q_size = self.num_heads * self.head_dim    
         self.kv_size = self.num_kv_heads * self.head_dim
         self.scaling = self.head_dim**-0.5
         self.rope_theta = rope_theta
@@ -133,13 +133,12 @@ class LlamaAttention(nn.Module):
             bias=bias,
             linear_method=linear_method,
         )
-        self.o_proj = RowParallelLinear(
+        self.o_proj = RowParallelLinear(  
             self.total_num_heads * self.head_dim,
             hidden_size,
             bias=bias,
             linear_method=linear_method,
         )
-
         self.rotary_emb = get_rope(
             self.head_dim,
             rotary_dim=self.head_dim,
