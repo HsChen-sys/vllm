@@ -189,7 +189,7 @@ class FlashAttentionImpl(AttentionImpl):
             # Reshape the input keys and values and store them in the cache.
             # If kv_cache is not provided, the new key and value tensors are
             # not cached. This happens during the initial memory profiling run.
-            PagedAttention.write_to_paged_cache(key, value, key_cache,
+            PagedAttention.write_to_paged_cache(key, value, key_cache, #这一步将计算出的kv值写入kv-cache
                                                 value_cache,
                                                 attn_metadata.slot_mapping,
                                                 attn_metadata.kv_cache_dtype,
@@ -217,6 +217,7 @@ class FlashAttentionImpl(AttentionImpl):
                 # normal attention
                 # When block_tables are not filled, it means q and k are the
                 # prompt, and they have the same length.
+                # 第一次prefill，block_table.numel为0， 不需要传入block_table
                 out = flash_attn_varlen_func(
                     q=query,
                     k=key,
@@ -237,21 +238,29 @@ class FlashAttentionImpl(AttentionImpl):
                 # TODO(Hai) this triton kernel has regression issue (broke) to
                 # deal with different data types between KV and FP8 KV cache,
                 # to be addressed separately.
+                # 这里应该是 chunked prefill 的 kernel
+                # block tables 记录每个sequence的block_table (kv-cache), [maxlen_padded_block_table]
+                # subquery_start_loc: cumsum(subquery_len), subquery_len = prefill_end - computed_len
+                # prompt_lens: [prompt_len = prefill_end]
+                # context_lens: [computed_len]
+                # query: [prompt_tokens = promt[computed_len:]]
                 output[:num_prefill_tokens] = PagedAttention.forward_prefix(
                     query,
                     key,
                     value,
                     key_cache,
                     value_cache,
-                    prefill_meta.block_tables,
-                    prefill_meta.subquery_start_loc,  #prefix caching 用 subquery_start_loc来定位
-                    prefill_meta.prompt_lens_tensor,
-                    prefill_meta.context_lens,
+                    prefill_meta.block_tables,   
+                    prefill_meta.subquery_start_loc,  #chunked prefill 用 subquery_start_loc 来定位
+                    prefill_meta.prompt_lens_tensor,  
+                    prefill_meta.context_lens, 
                     prefill_meta.max_subquery_len,
                     self.alibi_slopes,
                 )
         if decode_meta := attn_metadata.decode_metadata:
             # Decoding run.
+            # context_lens 需要考虑sliding window， min(seq_len, sliding_window_len)
+            
             output[num_prefill_tokens:] = PagedAttention.forward_decode(
                 decode_query,
                 key_cache,

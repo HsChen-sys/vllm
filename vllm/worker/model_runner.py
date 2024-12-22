@@ -280,13 +280,13 @@ class ModelRunner:
             prompt_len = prefill_end
             prompt_lens.append(prompt_len)
 
-            # 针对prefix caching或chunked prefill的逻辑处理：
+            # 针对chunked prefill的逻辑处理：
             # 如果computed_block_nums存在，表示之前已有缓存的block号，需要从prompt中去除已缓存的部分。
             # 如果chunked prefill启用，则需要维护prefix_block_tables，以记录之前处理过的块信息。
             # NOTE: This only works for oooooooxxx style attention.
             if computed_block_nums is not None and len(
                     computed_block_nums) > 0 and self.sliding_window is None:
-                # Prefix is not supported with sliding_window
+                # Chunked prefill is not supported with sliding_window
                 computed_len = len(computed_block_nums) * self.block_size
                 prompt_tokens = prompt_tokens[computed_len:]
                 prefix_block_tables.append(computed_block_nums)
@@ -382,7 +382,7 @@ class ModelRunner:
         # Prepare prefix block tables
 
         max_prompt_block_table_len = max(len(t) for t in prefix_block_tables)
-        block_tables = make_tensor_with_pad(
+        block_tables = make_tensor_with_pad( #这里的block_table都会被padding，与最大block_table长度对齐
             prefix_block_tables,
             max_len=max_prompt_block_table_len,
             pad=0,

@@ -159,7 +159,7 @@ class PagedAttention:
             )
         return output
 
-    @staticmethod
+    @staticmethod #chunked
     def forward_prefix(
         query: torch.Tensor,
         key: torch.Tensor,
